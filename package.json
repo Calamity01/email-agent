@@ -8,15 +8,27 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "classify:try": "tsx src/try-classify.ts",
+    "eval:sample": "tsx src/eval-sample.ts",
+    "eval:compare": "tsx src/eval-compare.ts",
+    "eval:rerun": "tsx src/eval-rerun.ts",
+    "eval:diagnose": "tsx src/eval-diagnose.ts",
+    "eval:fp": "tsx src/eval-fp.ts",
+    "eval:relabel": "tsx src/eval-relabel.ts",
+    "eval:zoho": "tsx src/eval-zoho.ts",
+    "eval:diff": "tsx src/eval-diff.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@azure/msal-node": "^7.0.1",
-    "dotenv": "^18.0.5"
+    "dotenv": "^18.0.5",
+    "openai": "^7.28.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

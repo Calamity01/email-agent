@@ -31,7 +31,7 @@ const pca = new PublicClientApplication({
   cache: { cachePlugin },
 });
 
-const scopes = ['Mail.ReadWrite'];
+const scopes = ['User.Read', 'Mail.ReadWrite'];
 
 export async function getToken(): Promise<string> {
   const accounts = await pca.getTokenCache().getAllAccounts();
