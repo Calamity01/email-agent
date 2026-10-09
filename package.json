@@ -17,7 +17,9 @@
     "eval:fp": "tsx src/eval-fp.ts",
     "eval:relabel": "tsx src/eval-relabel.ts",
     "eval:zoho": "tsx src/eval-zoho.ts",
-    "eval:diff": "tsx src/eval-diff.ts"
+    "eval:diff": "tsx src/eval-diff.ts",
+    "eval:why": "tsx src/eval-why.ts",
+    "eval:recipients": "tsx src/eval-recipients.ts"
   },
   "keywords": [],
   "author": "",

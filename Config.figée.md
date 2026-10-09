@@ -1,0 +1,11 @@
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_REASONING_EFFORT=
+EXPECTED_MAILBOX=cbeliveau@electromega.com
+INTERNAL_DOMAINS=electromega.com
+SUPPLIER_DOMAINS=emxinc.com,pelcoinc.com,spectralite.ca,groupedl.ca,tacel.ca,smartmicro.com,smartmicro.de
+ACTIVE_CATEGORIES=soumission,nouvelle_commande,suivi_commande,autre
+HISTORY_MODE=before
+INTENT_FIELD=true
+FORCE_AUTRE_SENDERS=
+SIGNATURE_CUT=Thierry Lamoureux[\s\S]{0,5}Vice-President|Brian Antila[\s\S]{0,5}Gestionnaire|Michel Mondor[\s\S]{0,5}CD1
+FIELDS_MODE=true

@@ -1,0 +1,103 @@
+import { graph } from './graph.js';
+import type { EmailInput } from './classify.js';
+
+export type InboxMessage = {
+  id: string;
+  subject: string | null;
+  from?: { emailAddress?: { name?: string; address?: string } };
+  receivedDateTime: string;
+  conversationId: string;
+  body?: { contentType: string; content: string };
+};
+
+const NOISE_LINES = [
+  /ce courriel provient de l.ext.rieur/i,
+  /this email originated from outside/i,
+  /ne cliquez pas sur les liens/i,
+  /do not click links or open attachments/i,
+  /^\s*\[?external( sender)?\]?\s*$/i,
+];
+
+
+// Texte brut + identifiants stables (les IDs changent sinon quand un message est déplacé)
+export const PREFER = 'outlook.body-content-type="text", IdType="ImmutableId"';
+
+/** Vérifie que le compte connecté est bien le bon. À appeler au démarrage. */
+export async function assertMailbox(): Promise<string> {
+  const expected = process.env.EXPECTED_MAILBOX?.toLowerCase();
+  if (!expected) throw new Error('EXPECTED_MAILBOX manquant dans .env');
+
+  const me = await graph<{ displayName: string; mail: string | null; userPrincipalName: string }>(
+    '/me?$select=displayName,mail,userPrincipalName',
+  );
+  const actual = (me.mail ?? me.userPrincipalName).toLowerCase();
+  if (actual !== expected) {
+    throw new Error(
+      `Mauvais compte connecté : ${actual} (attendu : ${expected}). Supprime .token-cache.json et reconnecte-toi.`,
+    );
+  }
+  console.log(`Connecté : ${me.displayName} (${actual})`);
+  return actual;
+}
+
+/** Courriels de la boîte de réception reçus depuis `sinceIso` (inclus), du plus ancien au plus récent. */
+export async function fetchSince(sinceIso: string, max: number): Promise<InboxMessage[]> {
+  const qs = [
+    `$filter=${encodeURIComponent(`receivedDateTime ge ${sinceIso}`)}`,
+    `$orderby=${encodeURIComponent('receivedDateTime asc')}`,
+    '$select=id,subject,from,receivedDateTime,conversationId,body',
+    '$top=25',
+  ].join('&');
+
+  const out: InboxMessage[] = [];
+  let url: string | undefined = `/me/mailFolders/inbox/messages?${qs}`;
+  while (url && out.length < max) {
+    const page: { value: InboxMessage[]; '@odata.nextLink'?: string } = await graph(url, {
+      headers: { Prefer: PREFER },
+    });
+    out.push(...page.value);
+    url = page['@odata.nextLink'];
+  }
+  return out.slice(0, max);
+}
+
+// Marqueurs du début de l'historique cité (réponses et transferts)
+const QUOTE_MARKERS = [
+  /^-{2,}\s*(original message|message d['’]origine)/i,
+  /^(from|de)\s*:\s*\S/i,
+  /^(on|le)\s.+(wrote|a écrit)\s*:\s*$/i,
+];
+
+export function toEmailInput(m: InboxMessage): EmailInput {
+  const { latest, quoted } = splitBody(m.body?.content ?? '');
+  return {
+    subject: m.subject ?? '(sans objet)',
+    from: m.from?.emailAddress?.address ?? 'inconnu',
+    receivedDateTime: m.receivedDateTime,
+    bodyText: latest,
+    quotedText: quoted,
+  };
+}
+
+function stripNoise(text: string): string {
+  return text.split('\n').filter((l) => !NOISE_LINES.some((re) => re.test(l))).join('\n');
+}
+
+// Coupe la signature d'un collègue (configurable dans .env) pour que le message récent soit vraiment le message
+function cutSignature(text: string): string {
+  const src = process.env.SIGNATURE_CUT;
+  if (!src) return text;
+  const m = new RegExp(src, 'i').exec(text);
+  return m ? text.slice(0, m.index).trim() : text;
+}
+
+export function splitBody(raw: string): { latest: string; quoted: string } {
+  const text = stripNoise(raw.replace(/\r\n/g, '\n')).replace(/\n{3,}/g, '\n\n').trim();
+  const lines = text.split('\n');
+  const cut = lines.findIndex((l) => QUOTE_MARKERS.some((re) => re.test(l.trim())));
+  if (cut < 0) return { latest: cutSignature(text), quoted: '' };
+  return {
+    latest: cutSignature(lines.slice(0, cut).join('\n').trim()),
+    quoted: lines.slice(cut).join('\n').trim(),
+  };
+}
