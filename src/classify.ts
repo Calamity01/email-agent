@@ -8,8 +8,10 @@ import {
   type Classification,
   type EmailInput,
   FIELDS_MODE,
+  type Category,
 } from './taxonomy.js';
 import { refineCategory } from './fields.js';
+import { finalCategory } from './rules.js';
 
 export { CATEGORIES } from './taxonomy.js';
 export type { Category, Classification, EmailInput } from './taxonomy.js';
@@ -61,7 +63,11 @@ export async function classifyEmail(email: EmailInput): Promise<Classification> 
   const result = ClassificationSchema.parse(raw);
   if (FIELDS_MODE) {
     result.model_category = result.category;       // ce que le modèle aurait choisi lui-même
-    result.category = refineCategory(result).category;      // la catégorie vient de la table de décision
+    result.category = finalCategory(
+      { ...result, category: result.model_category as Category },
+      { from: email.from, to: [], cc: [], me: '' },
+      { cc: false },
+    ).category;
   }
   return result;
 }

@@ -83,7 +83,12 @@ async function main() {
       const rec = recipients[row[cId]] ?? { to: [], cc: [] };
       predicted = finalCategory(
         { ...c, category: c.model_category as Category },
-        { from: row[cFrom] ?? '', to: rec.to, cc: rec.cc, me },
+        { from: row[cFrom] ?? '', subject: row[cSubj] ?? '', to: rec.to, cc: rec.cc, me },
+        {
+          cc: !process.argv.includes('--no-cc'),
+          rules: arg('rules', 'v1') === 'v2' ? 'v2' : 'v1',
+          gabarit: process.argv.includes('--gabarit'),
+        },
       ).category;
     }
     pairs.push({

@@ -60,6 +60,20 @@ export function deriveCategory(f: Fields): Category {
 /** Catégorie du modèle, corrigée par les deux seules règles qui ont fait leurs preuves. */
 export function refineCategory(f: Fields & { category: Category }): { category: Category; rule: string } {
   const c = f.category;
+  // Un message qui ne fait qu'informer sur une commande en cours : rien à chercher
+  if (c === 'suivi_commande' && f.act === 'information') {
+    return { category: 'autre', rule: 'le message ne fait qu\'informer' };
+  }
+  // Relance de soumission : aucune information nouvelle
+  if (c === 'soumission' && f.topic === 'soumission_en_cours' && f.act === 'demande') {
+    return { category: 'autre', rule: 'relance de soumission' };
+  }
+  return { category: c, rule: 'modèle' };
+}
+
+/** Règles de cfg-v1 (gardées pour mesurer cfg-v1 sur le même échantillon). */
+export function refineCategoryV1(f: Fields & { category: Category }): { category: Category; rule: string } {
+  const c = f.category;
   if (c === 'soumission' || c === 'suivi_commande') {
     if (f.act === 'information') return { category: 'autre', rule: 'le message ne fait qu\'informer' };
     if (f.topic === 'soumission_en_cours') return { category: 'autre', rule: 'relance de soumission' };
