@@ -4,11 +4,16 @@ import { CLASSIFICATION_JSON_SCHEMA } from '../taxonomy.js';
 
 let client: OpenAI | undefined;
 
+export type CallOpts = {
+  name?: string;
+  schema?: { type: 'object';[k: string]: unknown };
+  maxTokens?: number;
+};
+
 // Modèles de raisonnement (gpt-5…, o1, o3…) : pas de temperature, mais reasoning_effort possible.
-// Les autres (gpt-4o-mini, gpt-4.1-mini…) : temperature acceptée, reasoning_effort refusé.
 const isReasoningModel = (model: string) => /^(gpt-5|o\d)/.test(model);
 
-export async function callOpenAI(system: string, userContent: string): Promise<unknown> {
+export async function callOpenAI(system: string, userContent: string, opts: CallOpts = {}): Promise<unknown> {
   client ??= new OpenAI(); // lit OPENAI_API_KEY
   const model = process.env.OPENAI_MODEL ?? 'gpt-5-mini';
   const effort = process.env.OPENAI_REASONING_EFFORT as ReasoningEffort | undefined;
@@ -19,8 +24,7 @@ export async function callOpenAI(system: string, userContent: string): Promise<u
 
   const completion = await client.chat.completions.create({
     model,
-    // Les tokens de raisonnement comptent dans cette limite : prévois large
-    max_completion_tokens: 2000,
+    max_completion_tokens: opts.maxTokens ?? 2000,
     ...modelParams,
     messages: [
       { role: 'system', content: system },
@@ -29,9 +33,9 @@ export async function callOpenAI(system: string, userContent: string): Promise<u
     response_format: {
       type: 'json_schema',
       json_schema: {
-        name: 'email_classification',
+        name: opts.name ?? 'email_classification',
         strict: true,
-        schema: CLASSIFICATION_JSON_SCHEMA,
+        schema: opts.schema ?? CLASSIFICATION_JSON_SCHEMA,
       },
     },
   });

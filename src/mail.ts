@@ -8,6 +8,9 @@ export type InboxMessage = {
   receivedDateTime: string;
   conversationId: string;
   body?: { contentType: string; content: string };
+  toRecipients?: { emailAddress?: { address?: string } }[];
+  ccRecipients?: { emailAddress?: { address?: string } }[];
+  attachments?: { name?: string; isInline?: boolean }[];
 };
 
 const NOISE_LINES = [
@@ -45,8 +48,9 @@ export async function fetchSince(sinceIso: string, max: number): Promise<InboxMe
   const qs = [
     `$filter=${encodeURIComponent(`receivedDateTime ge ${sinceIso}`)}`,
     `$orderby=${encodeURIComponent('receivedDateTime asc')}`,
-    '$select=id,subject,from,receivedDateTime,conversationId,body',
+    '$select=id,subject,from,receivedDateTime,conversationId,body,toRecipients,ccRecipients',
     '$top=25',
+    '$expand=attachments($select=name,isInline)',
   ].join('&');
 
   const out: InboxMessage[] = [];
@@ -76,6 +80,10 @@ export function toEmailInput(m: InboxMessage): EmailInput {
     receivedDateTime: m.receivedDateTime,
     bodyText: latest,
     quotedText: quoted,
+    attachmentNames: (m.attachments ?? [])
+      .filter((a) => !a.isInline)
+      .map((a) => a.name ?? '')
+      .filter((n) => n && !/^image\d*\.(png|jpe?g|gif)$/i.test(n)),
   };
 }
 
@@ -100,4 +108,18 @@ export function splitBody(raw: string): { latest: string; quoted: string } {
     latest: cutSignature(lines.slice(0, cut).join('\n').trim()),
     quoted: lines.slice(cut).join('\n').trim(),
   };
+}
+
+export function recipientsOf(m: InboxMessage): { to: string[]; cc: string[] } {
+  const addrs = (l?: { emailAddress?: { address?: string } }[]) =>
+    (l ?? []).map((a) => (a.emailAddress?.address ?? '').toLowerCase());
+  return { to: addrs(m.toRecipients), cc: addrs(m.ccRecipients) };
+}
+
+export async function fetchHtmlBody(id: string): Promise<string> {
+  const m = await graph<{ body?: { content?: string } }>(
+    `/me/messages/${encodeURIComponent(id)}?$select=body`,
+    { headers: { Prefer: 'outlook.body-content-type="html", IdType="ImmutableId"' } },
+  );
+  return m.body?.content ?? '';
 }

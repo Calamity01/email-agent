@@ -92,6 +92,7 @@ export type EmailInput = {
   receivedDateTime: string;
   bodyText: string;
   quotedText?: string;
+  attachmentNames?: string[];
 };
 
 export const ClassificationSchema = z.object({

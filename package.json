@@ -23,7 +23,12 @@
     "eval:ablation": "tsx src/eval-ablation.ts",
     "eval:recheck": "tsx src/eval-recheck.ts",
     "eval:misses": "tsx src/eval-misses.ts",
-    "eval:sender": "tsx src/eval-sender.ts"
+    "eval:sender": "tsx src/eval-sender.ts",
+    "pilot:review": "tsx src/pilot-review.ts",
+    "eval:refscan": "tsx src/eval-refscan.ts",
+    "eval:refs": "tsx src/eval-refs.ts",
+    "eval:zoholinks": "tsx src/eval-zoho-links.ts",
+    "eval:head": "tsx src/eval-head.ts"
   },
   "keywords": [],
   "author": "",
