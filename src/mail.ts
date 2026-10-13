@@ -1,5 +1,6 @@
 import { graph } from './graph.js';
 import type { EmailInput } from './classify.js';
+import { CATEGORIES, type Category } from './taxonomy.js';
 
 export type InboxMessage = {
   id: string;
@@ -11,6 +12,8 @@ export type InboxMessage = {
   toRecipients?: { emailAddress?: { address?: string } }[];
   ccRecipients?: { emailAddress?: { address?: string } }[];
   attachments?: { name?: string; isInline?: boolean }[];
+  categories?: string[];
+  webLink?: string;
 };
 
 const NOISE_LINES = [
@@ -48,9 +51,10 @@ export async function fetchSince(sinceIso: string, max: number): Promise<InboxMe
   const qs = [
     `$filter=${encodeURIComponent(`receivedDateTime ge ${sinceIso}`)}`,
     `$orderby=${encodeURIComponent('receivedDateTime asc')}`,
-    '$select=id,subject,from,receivedDateTime,conversationId,body,toRecipients,ccRecipients',
+    '$select=id,subject,from,receivedDateTime,conversationId,body,toRecipients,ccRecipients,categories,webLink',
     '$top=25',
     '$expand=attachments($select=name,isInline)',
+    
   ].join('&');
 
   const out: InboxMessage[] = [];
@@ -122,4 +126,24 @@ export async function fetchHtmlBody(id: string): Promise<string> {
     { headers: { Prefer: 'outlook.body-content-type="html", IdType="ImmutableId"' } },
   );
   return m.body?.content ?? '';
+}
+
+// Les trois catégories gérées par l'agent : les autres catégories que tu poses toi-même ne sont jamais touchées
+const TARGETS = ['soumission', 'nouvelle_commande', 'suivi_commande'] as const;
+const MANAGED_LABELS: string[] = TARGETS.map((c) => CATEGORIES[c].label);
+
+/** Pose la catégorie Outlook correspondante. Idempotent : ne fait rien si déjà en place. */
+export async function tagMessage(m: InboxMessage, category: Category): Promise<'posée' | 'inchangée' | 'ignorée'> {
+  if (!(TARGETS as readonly string[]).includes(category)) return 'ignorée';
+  const label = CATEGORIES[category].label;
+  const current = m.categories ?? [];
+  const next = [...current.filter((c) => !MANAGED_LABELS.includes(c)), label];
+  if (next.length === current.length && next.every((c) => current.includes(c))) return 'inchangée';
+
+  await graph(`/me/messages/${encodeURIComponent(m.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'IdType="ImmutableId"' },
+    body: JSON.stringify({ categories: next }),
+  });
+  return 'posée';
 }

@@ -1,9 +1,11 @@
 import 'dotenv/config';
 import { promises as fs } from 'node:fs';
 import { classifyEmail } from './classify.js';
-import { assertMailbox, fetchSince, toEmailInput, recipientsOf } from './mail.js';
-import { extractReferences } from './refs.js';
+import { assertMailbox, fetchSince, toEmailInput, recipientsOf, tagMessage } from './mail.js';
+import { extractReferences, Ref } from './refs.js';
 import { extractZohoIds } from './zoho.js';
+import { buildTriage, flushOutbox, pushTriage } from './push.js';
+import { syncStatusIfDue } from './sync-status.js';
 
 const DATA_DIR = 'data';
 const STATE_FILE = `${DATA_DIR}/state.json`;
@@ -12,6 +14,7 @@ const LOG_FILE = `${DATA_DIR}/classifications.jsonl`;
 const POLL_MS = 3 * 60 * 1000; // vérifie aux 3 minutes
 const MAX_PER_RUN = 50;        // garde-fou de coût par cycle
 const LOOKBACK_DAYS = 10;       // au tout premier lancement
+const TAG_OUTLOOK = process.env.TAG_OUTLOOK === 'true'; // écrit dans ta boîte : désactivé par défaut
 
 type State = { lastReceived: string; processed: string[] };
 
@@ -30,6 +33,7 @@ async function saveState(s: State) {
 }
 
 async function runOnce(me: string) {
+  await flushOutbox();
   const state = await loadState();
   const seen = new Set(state.processed);
 
@@ -58,6 +62,14 @@ async function runOnce(me: string) {
         c.category = 'autre';
         entry.rule = 'en copie (Cc) seulement';
       }
+      if (TAG_OUTLOOK && c.category !== 'autre') {
+        try {
+          entry.outlook = await tagMessage(m, c.category);
+        } catch (e) {
+          // Un échec d'étiquetage ne doit jamais bloquer le reste
+          entry.outlook = `échec : ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
       if (c.category !== 'autre') {
         const isZoho =
           input.from.toLowerCase() === 'notifications@zohocrm.com' &&
@@ -69,6 +81,9 @@ async function runOnce(me: string) {
         console.log(`   références : ${refs.map((r) => r.value).join(', ') || 'aucune'}`);
       }
       entry.classification = c;
+      await pushTriage(
+        buildTriage(m, input, c, (entry.references as Ref[] | undefined) ?? [], entry.rule as string | undefined),
+      );
       console.log(`[${c.category}] [${c.urgency}] ${input.subject}`);
     } catch (e) {
       // L'échec est journalisé (champ « error ») et le courriel n'est pas rejoué
@@ -93,6 +108,11 @@ async function main() {
       await runOnce(me);
     } catch (e) {
       console.error('Erreur du cycle :', e);
+    }
+    try {
+      await syncStatusIfDue();
+    } catch (e) {
+      console.error('Synchro des statuts :', e instanceof Error ? e.message : e);
     }
     if (!once) await new Promise((r) => setTimeout(r, POLL_MS));
   } while (!once);
