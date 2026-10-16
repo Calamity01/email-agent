@@ -1,16 +1,18 @@
 import 'dotenv/config';
 import { graph } from './graph.js';
+import { applyOutlookChange, type Urgency } from './mail.js';
+import { categoryIds, type Category } from './taxonomy.js';
 
 type Status = 'inbox' | 'archive' | 'deleted' | 'other';
 type State = { status: Status; repliedAt?: string };
-
+type Pending = { id: number; messageId: string; field: string; newValue: string };
 const IMMUTABLE = { Prefer: 'IdType="ImmutableId"' };
 let lastSync = 0;
 let folders: { inbox: string; archive: string; deleted: string } | undefined;
 // Dernières dates de réponse déjà envoyées au backend (évite de les renvoyer à chaque passage)
 const sentReplies = new Map<string, string>();
-
 const base = () => (process.env.TRIAGE_API_URL ?? '').replace(/\/+$/, '');
+const URGENCIES = ['basse', 'normale', 'haute'];
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${base()}${path}`, {
@@ -101,7 +103,8 @@ export async function syncStatusIfDue(): Promise<void> {
   const everyMs = Number(process.env.SYNC_STATUS_MIN ?? 15) * 60_000;
   if (Date.now() - lastSync < everyMs) return;
   lastSync = Date.now(); // même en cas d'échec : on ne martèle pas le serveur
-
+  try { await pushChangesToOutlook(); } 
+  catch (e) { console.error('Poussée vers Outlook :', e instanceof Error ? e.message : e); }
   const days = Number(process.env.SYNC_SINCE_DAYS ?? 45);
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const open = await api<{ items: { messageId: string }[]; total: number; truncated: boolean }>(
@@ -130,4 +133,35 @@ export async function syncStatusIfDue(): Promise<void> {
     const replies = updates.filter((u) => u.repliedAt).length;
     console.log(`Synchro : statuts ${JSON.stringify(count)}, réponses détectées ${replies} (sur ${open.items.length} vérifiés)`);
   }
+}
+
+async function pushChangesToOutlook(): Promise<void> {
+  const { items } = await api<{ items: Pending[] }>('/outlook-pending?limit=500');
+  if (items.length === 0) return;
+
+  const byMsg = new Map<string, Pending[]>();
+  for (const it of items) byMsg.set(it.messageId, [...(byMsg.get(it.messageId) ?? []), it]);
+
+  const done: number[] = [];
+  for (const [messageId, rows] of byMsg) {
+    rows.sort((a, b) => a.id - b.id); // la dernière valeur gagne
+    const ch: { category?: Category; urgency?: Urgency } = {};
+    for (const r of rows) {
+      if (r.field === 'category' && categoryIds.includes(r.newValue as Category)) ch.category = r.newValue as Category;
+      if (r.field === 'urgency' && URGENCIES.includes(r.newValue)) ch.urgency = r.newValue as Urgency;
+    }
+    try {
+      await applyOutlookChange(messageId, ch);
+      done.push(...rows.map((r) => r.id));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/Graph 404/.test(msg)) done.push(...rows.map((r) => r.id)); // courriel supprimé : inutile de réessayer
+      else console.error(`Outlook : échec pour ${messageId} : ${msg}`); // réessayé au prochain passage
+    }
+  }
+
+  for (let i = 0; i < done.length; i += 200) {
+    await api('/outlook-done', { method: 'POST', body: JSON.stringify({ ids: done.slice(i, i + 200) }) });
+  }
+  if (done.length) console.log(`Outlook mis à jour : ${done.length} changement(s) appliqué(s)`);
 }

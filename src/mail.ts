@@ -23,7 +23,8 @@ const NOISE_LINES = [
   /do not click links or open attachments/i,
   /^\s*\[?external( sender)?\]?\s*$/i,
 ];
-
+const IMPORTANCE = { basse: 'low', normale: 'normal', haute: 'high' } as const;
+export type Urgency = keyof typeof IMPORTANCE;
 
 // Texte brut + identifiants stables (les IDs changent sinon quand un message est déplacé)
 export const PREFER = 'outlook.body-content-type="text", IdType="ImmutableId"';
@@ -146,4 +147,25 @@ export async function tagMessage(m: InboxMessage, category: Category): Promise<'
     body: JSON.stringify({ categories: next }),
   });
   return 'posée';
+}
+
+export async function applyOutlookChange(
+  messageId: string,
+  ch: { category?: Category; urgency?: Urgency },
+): Promise<void> {
+  const id = encodeURIComponent(messageId);
+  const headers = { Prefer: 'IdType="ImmutableId"' };
+  const body: Record<string, unknown> = {};
+
+  if (ch.category) {
+    const cur = await graph<{ categories?: string[] }>(`/me/messages/${id}?$select=categories`, { headers });
+    const kept = (cur.categories ?? []).filter((c) => !MANAGED_LABELS.includes(c));
+    body.categories = (TARGETS as readonly string[]).includes(ch.category)
+      ? [...kept, CATEGORIES[ch.category].label]
+      : kept; // « autre » (ou catégorie non gérée) : on retire seulement nos étiquettes
+  }
+  if (ch.urgency) body.importance = IMPORTANCE[ch.urgency];
+  if (Object.keys(body).length === 0) return;
+
+  await graph(`/me/messages/${id}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
 }
